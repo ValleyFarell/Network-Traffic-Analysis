@@ -1,0 +1,28 @@
+# Служебные файлы Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+data
+exps
+
+# Переменные окружения
+.env
+
+# Редакторы и операционные системы
+.idea/
+.vscode/
+.DS_Store
+
+# Большие локальные данные и обученные модели
+data/raw/*
+data/processed/*
+artifacts/*
+
+# Пустые каталоги должны оставаться в Git
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!artifacts/.gitkeep
