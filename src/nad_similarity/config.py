@@ -19,8 +19,6 @@ class Settings(BaseSettings):
     artifacts_dir: Path = Path("artifacts")
     model_artifact_path: Path = Path("artifacts/similarity_model.pkl")
 
-    database_url: str = "postgresql+psycopg://nad:nad@localhost:5432/nad"
-
     default_neighbors: int = Field(default=10, ge=1)
     max_neighbors: int = Field(default=100, ge=1)
     model_version: str = "v1"

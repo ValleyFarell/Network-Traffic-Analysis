@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pandas as pd
 
+from nad_similarity.features import BehaviorFeatureSettings
+from nad_similarity.schemas import HostPredictionRequest
 from nad_similarity.service import SimilarityService
 
 
@@ -31,6 +33,18 @@ def make_service() -> SimilarityService:
         cluster_labels_=pd.Series([0, 0, 0, 1], index=hosts),
         cluster_strengths_=pd.Series([1.0, 0.9, 0.8, 0.7], index=hosts),
     )
+    similarity_model.predict_cluster = lambda vector: (4, 0.75)
+    similarity_model.nearest_vector = lambda vector, limit: pd.DataFrame(
+        [
+            {
+                "host_id": "B",
+                "distance": 0.2,
+                "similarity_score": 0.818730753,
+                "cluster_id": 0,
+                "cluster_strength": 0.9,
+            }
+        ]
+    ).head(limit)
     graph_model = SimpleNamespace(
         labels_=pd.Series([2, 2, -1, 2], index=hosts),
         probabilities_=pd.Series([1.0, 0.9, 0.0, 0.8], index=hosts),
@@ -49,6 +63,15 @@ def make_service() -> SimilarityService:
     )
     artifact = SimpleNamespace(
         version="test",
+        behavior_builder=SimpleNamespace(
+            settings=BehaviorFeatureSettings(),
+            categories_={"port": ["80", "OTHER", "N_OTHER"]},
+            transform=lambda tables, host_ids: pd.DataFrame(
+                [[0.9, 0.1, 0.0, 0.0, 0.0]],
+                index=host_ids,
+                columns=embedding.columns,
+            ),
+        ),
         similarity_model=similarity_model,
         graph_role_model=graph_model,
         hierarchy_model=hierarchy_model,
@@ -84,3 +107,35 @@ def test_host_exposes_hierarchical_membership() -> None:
     assert result.hierarchical_group == "G2.B0"
     assert result.is_graph_noise is False
     assert result.is_subtype_noise is False
+
+
+def test_predict_new_host_uses_global_model_without_graph_role() -> None:
+    request = HostPredictionRequest.model_validate(
+        {
+            "host_id": "X",
+            "neighbors": 1,
+            "flows": [
+                {
+                    "time": 1,
+                    "duration": 2,
+                    "src": "X",
+                    "src_port": "12345",
+                    "dst": "B",
+                    "dst_port": "80",
+                    "protocol": "6",
+                    "packets": 3,
+                    "bytes": 100,
+                }
+            ],
+        }
+    )
+
+    result = make_service().predict(request)
+
+    assert result.cluster_id == 4
+    assert result.cluster_strength == 0.75
+    assert result.graph_role is None
+    assert result.behavior_subtype is None
+    assert result.hierarchical_group is None
+    assert result.neighbors[0].host_id == "B"
+    assert abs(sum(row.share for row in result.neighbors[0].contributions) - 1.0) < 1e-6

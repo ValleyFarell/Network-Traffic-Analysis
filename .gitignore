@@ -6,8 +6,6 @@ __pycache__/
 .coverage
 htmlcov/
 .venv/
-data
-exps
 
 # Переменные окружения
 .env

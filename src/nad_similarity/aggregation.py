@@ -13,7 +13,6 @@ import pandas as pd
 
 from nad_similarity.features import BehaviorTables
 
-
 FLOW_SCHEMA = """
 {
     'time': 'BIGINT', 'duration': 'BIGINT',
@@ -373,8 +372,14 @@ class TrainingDataBuilder:
         for host in first_stage:
             out_active = active.get((host, "out"), 0) > 0
             in_active = active.get((host, "in"), 0) > 0
-            out_enough = not out_active or sample_out.get(host, 0) >= settings.min_sample_per_direction
-            in_enough = not in_active or sample_in.get(host, 0) >= settings.min_sample_per_direction
+            out_enough = (
+                not out_active
+                or sample_out.get(host, 0) >= settings.min_sample_per_direction
+            )
+            in_enough = (
+                not in_active
+                or sample_in.get(host, 0) >= settings.min_sample_per_direction
+            )
             flow_defined.loc[host] = out_enough and in_enough
 
         selected = first_stage[partner_defined & flow_defined].sort_values()
@@ -485,15 +490,24 @@ class TrainingDataBuilder:
                 FROM flows WHERE dst IN (SELECT host FROM target_hosts)
             ), long_form AS (
                 SELECT host, 'bytes' AS metric,
-                       least({self.settings.byte_bin_max}, floor(ln(bytes + 1) / ln(2)))::INTEGER AS bin
+                       least(
+                           {self.settings.byte_bin_max},
+                           floor(ln(bytes + 1) / ln(2))
+                       )::INTEGER AS bin
                 FROM events
                 UNION ALL
                 SELECT host, 'packets',
-                       least({self.settings.packet_bin_max}, floor(ln(packets + 1) / ln(2)))::INTEGER
+                       least(
+                           {self.settings.packet_bin_max},
+                           floor(ln(packets + 1) / ln(2))
+                       )::INTEGER
                 FROM events
                 UNION ALL
                 SELECT host, 'duration',
-                       least({self.settings.duration_bin_max}, floor(ln(duration + 1) / ln(2)))::INTEGER
+                       least(
+                           {self.settings.duration_bin_max},
+                           floor(ln(duration + 1) / ln(2))
+                       )::INTEGER
                 FROM events
             )
             SELECT host, metric, bin, count(*)::BIGINT AS observations

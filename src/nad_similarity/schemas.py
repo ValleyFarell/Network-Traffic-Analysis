@@ -4,7 +4,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-
 HostId = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
@@ -28,23 +27,62 @@ class ApiModel(BaseModel):
 class FlowInput(ApiModel):
     """Одна запись сетевого потока из истории нового хоста."""
 
-    time: int = Field(ge=1, description="Относительное время в секундах")
-    duration: float = Field(ge=0)
-    src: HostId
-    src_port: PortValue
-    dst: HostId
-    dst_port: PortValue
-    protocol: ProtocolValue
-    packets: int = Field(ge=0)
-    bytes: int = Field(ge=0)
+    time: int = Field(
+        ge=1,
+        le=15 * 86_400,
+        description="Относительное время в секундах внутри периода [0, 15)",
+    )
+    duration: float = Field(ge=0, description="Длительность потока в секундах")
+    src: HostId = Field(description="Идентификатор компьютера-источника")
+    src_port: PortValue = Field(description="Порт источника как строка из LANL")
+    dst: HostId = Field(description="Идентификатор компьютера-получателя")
+    dst_port: PortValue = Field(description="Порт назначения как строка из LANL")
+    protocol: ProtocolValue = Field(
+        description="Код протокола как строка, например 6 для TCP или 17 для UDP"
+    )
+    packets: int = Field(ge=0, description="Количество пакетов")
+    bytes: int = Field(ge=0, description="Количество переданных байт")
 
 
 class HostPredictionRequest(ApiModel):
     """История хоста, которого может не быть в обучающей выборке."""
 
-    host_id: HostId
-    flows: list[FlowInput] = Field(min_length=1)
-    neighbors: int = Field(default=10, ge=1, le=100)
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "host_id": "NEW_HOST",
+                    "neighbors": 5,
+                    "flows": [
+                        {
+                            "time": 3601,
+                            "duration": 2.4,
+                            "src": "NEW_HOST",
+                            "src_port": "49152",
+                            "dst": "C1000",
+                            "dst_port": "443",
+                            "protocol": "6",
+                            "packets": 12,
+                            "bytes": 8400,
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    host_id: HostId = Field(description="ID нового хоста, отсутствующий в модели")
+    flows: list[FlowInput] = Field(
+        min_length=1,
+        description="Полная доступная история flows этого хоста за 15 суток",
+    )
+    neighbors: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Сколько ближайших известных хостов вернуть",
+    )
 
     @model_validator(mode="after")
     def host_must_participate_in_every_flow(self) -> "HostPredictionRequest":
@@ -65,23 +103,41 @@ class HostPredictionRequest(ApiModel):
 class FeatureContribution(ApiModel):
     """Вклад одного семейства признаков в итоговое расстояние."""
 
-    family: str
-    distance: float = Field(ge=0)
-    share: float = Field(ge=0, le=1)
+    family: str = Field(description="Группа признаков")
+    distance: float = Field(ge=0, description="Расстояние внутри этой группы")
+    share: float = Field(
+        ge=0,
+        le=1,
+        description="Доля группы в квадрате полного расстояния",
+    )
 
 
 class NeighborResponse(ApiModel):
     """Один известный хост из результатов поиска похожих узлов."""
 
     host_id: HostId
-    distance: float = Field(ge=0)
-    similarity_score: float = Field(ge=0, le=1)
-    cluster_id: int
-    cluster_strength: float = Field(ge=0, le=1)
-    graph_role: int | None = None
-    graph_role_strength: float = Field(ge=0, le=1)
-    behavior_subtype: int
-    hierarchical_group: str
+    distance: float = Field(ge=0, description="Евклидово расстояние; меньше — ближе")
+    similarity_score: float = Field(
+        ge=0,
+        le=1,
+        description="exp(-distance); удобный балл близости, но не вероятность",
+    )
+    cluster_id: int = Field(description="Глобальный поведенческий кластер")
+    cluster_strength: float = Field(
+        ge=0,
+        le=1,
+        description="Сила принадлежности глобальному кластеру по HDBSCAN",
+    )
+    graph_role: int | None = Field(description="Кластер по положению узла в графе")
+    graph_role_strength: float = Field(
+        ge=0,
+        le=1,
+        description="Сила принадлежности графовой роли",
+    )
+    behavior_subtype: int = Field(description="Подтип поведения внутри графовой роли")
+    hierarchical_group: str = Field(
+        description="Составная метка вида G6.B1 или G6.noise"
+    )
     contributions: list[FeatureContribution] = Field(default_factory=list)
 
 
@@ -89,15 +145,15 @@ class HostResponse(ApiModel):
     """Информация модели об известном хосте."""
 
     host_id: HostId
-    cluster_id: int
+    cluster_id: int = Field(description="Глобальный поведенческий кластер; -1 — шум")
     cluster_strength: float = Field(ge=0, le=1)
-    is_noise: bool
-    graph_role: int | None = None
+    is_noise: bool = Field(description="Не найден плотный глобальный кластер")
+    graph_role: int | None = Field(description="Кластер по положению узла в графе")
     graph_role_strength: float = Field(ge=0, le=1)
-    is_graph_noise: bool
-    behavior_subtype: int
-    is_subtype_noise: bool
-    hierarchical_group: str
+    is_graph_noise: bool = Field(description="Не найдена плотная графовая роль")
+    behavior_subtype: int = Field(description="Подтип внутри графовой роли")
+    is_subtype_noise: bool = Field(description="Не найден плотный локальный подтип")
+    hierarchical_group: str = Field(description="Итоговая составная метка")
     model_version: str
 
 
@@ -123,25 +179,29 @@ class PairComparisonResponse(ApiModel):
 
 
 class PredictionResponse(ApiModel):
-    """Кластер и ближайшие хосты для переданной сетевой истории."""
+    """Глобальный кластер и соседи для переданной истории нового хоста."""
 
     host_id: HostId
     cluster_id: int
     cluster_strength: float = Field(ge=0, le=1)
     is_noise: bool
+    graph_role: None = Field(
+        default=None,
+        description="Не вычисляется без полного графа сети",
+    )
+    behavior_subtype: None = Field(
+        default=None,
+        description="Не вычисляется без графовой роли",
+    )
+    hierarchical_group: None = Field(
+        default=None,
+        description="Не вычисляется без графовой роли и подтипа",
+    )
+    observations: int = Field(ge=1)
+    search_scope: Literal["global_embedding"] = "global_embedding"
+    limitations: list[str]
     model_version: str
     neighbors: list[NeighborResponse]
-
-
-class ClusterResponse(ApiModel):
-    """Краткое описание одного поведенческого кластера."""
-
-    cluster_id: int
-    size: int = Field(ge=0)
-    medoid_host_id: HostId | None = None
-    sample_hosts: list[HostId] = Field(default_factory=list)
-    profile: dict[str, float] = Field(default_factory=dict)
-    model_version: str
 
 
 class HealthResponse(ApiModel):

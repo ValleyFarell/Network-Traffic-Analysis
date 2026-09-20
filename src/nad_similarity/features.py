@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import normalize
 
-
 V20_BEHAVIOR_FAMILIES = ("time", "services", "flow", "direction")
 V20_BEHAVIOR_DIMENSIONS = 372
 
@@ -420,7 +419,8 @@ class BehaviorFeatureBuilder:
         if not np.isfinite(result.to_numpy()).all():
             raise ValueError("В поведенческом embedding появились NaN или inf")
 
-        self.family_columns_ = family_columns
+        if not self.fitted_:
+            self.family_columns_ = family_columns
         return result
 
     @staticmethod

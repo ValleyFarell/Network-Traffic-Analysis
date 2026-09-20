@@ -34,7 +34,7 @@ class HostSimilarityModel:
         self,
         embedding: pd.DataFrame,
         family_columns: dict[str, list[str]],
-    ) -> "HostSimilarityModel":
+    ) -> HostSimilarityModel:
         """Обучает kNN и HDBSCAN с параметрами выбранного решения v19."""
 
         if embedding.index.has_duplicates:
@@ -70,7 +70,7 @@ class HostSimilarityModel:
         distances, positions = self.neighbor_model.kneighbors(query, n_neighbors=count)
 
         rows = []
-        for distance, position in zip(distances[0], positions[0]):
+        for distance, position in zip(distances[0], positions[0], strict=True):
             candidate = str(embedding.index[position])
             if candidate == host_id:
                 continue
@@ -104,7 +104,7 @@ class HostSimilarityModel:
             n_neighbors=min(limit, len(embedding)),
         )
         rows = []
-        for distance, position in zip(distances[0], positions[0]):
+        for distance, position in zip(distances[0], positions[0], strict=True):
             candidate = str(embedding.index[position])
             rows.append(
                 {

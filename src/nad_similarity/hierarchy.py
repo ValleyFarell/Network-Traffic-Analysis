@@ -26,7 +26,7 @@ class HierarchicalSubtypeModel:
         self,
         behavior_space: pd.DataFrame,
         graph_roles: pd.Series,
-    ) -> "HierarchicalSubtypeModel":
+    ) -> HierarchicalSubtypeModel:
         """Повторяет второй уровень v20 с параметрами HDBSCAN ``30/8``."""
 
         graph_roles = graph_roles.reindex(behavior_space.index)

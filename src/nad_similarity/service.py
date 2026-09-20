@@ -8,17 +8,23 @@ import numpy as np
 import pandas as pd
 
 from nad_similarity.artifacts import ModelArtifact, load_artifact
+from nad_similarity.inference import build_new_host_tables
 from nad_similarity.schemas import (
     FeatureContribution,
+    HostPredictionRequest,
     HostResponse,
     NeighborResponse,
     PairComparisonResponse,
+    PredictionResponse,
     SimilarHostsResponse,
 )
 
-
 # Именно эти четыре семейства использовались на втором уровне в v20.
 BEHAVIOR_FAMILIES = ("time", "services", "flow", "direction")
+
+
+class KnownHostConflictError(ValueError):
+    """Новый inference нельзя запускать с ID обучающего хоста."""
 
 
 class SimilarityService:
@@ -93,7 +99,7 @@ class SimilarityService:
             raise ValueError("Координаты второго уровня не совпадают с embedding")
 
     @classmethod
-    def from_path(cls, path: Path) -> "SimilarityService":
+    def from_path(cls, path: Path) -> SimilarityService:
         """Загружает проверенный артефакт обучения."""
 
         return cls(load_artifact(path))
@@ -152,7 +158,11 @@ class SimilarityService:
             selected_distances = distances[order]
 
         neighbors = []
-        for position, distance in zip(selected_positions, selected_distances):
+        for position, distance in zip(
+            selected_positions,
+            selected_distances,
+            strict=True,
+        ):
             candidate = str(self.host_ids[position])
             neighbors.append(
                 NeighborResponse(
@@ -208,6 +218,63 @@ class SimilarityService:
             graph_contributions=graph_contributions,
         )
 
+    def predict(self, request: HostPredictionRequest) -> PredictionResponse:
+        """Применяет глобальную модель к полной flow-истории нового хоста."""
+
+        if request.host_id in self.host_ids:
+            raise KnownHostConflictError(
+                f"Хост {request.host_id!r} уже присутствует в модели; используй GET /hosts"
+            )
+
+        builder = self.artifact.behavior_builder
+        tables = build_new_host_tables(
+            request=request,
+            settings=builder.settings,
+            port_categories=builder.categories_.get("port", []),
+        )
+        vector = builder.transform(tables, pd.Index([request.host_id], name="host"))
+        cluster_id, cluster_strength = self.artifact.similarity_model.predict_cluster(vector)
+        nearest = self.artifact.similarity_model.nearest_vector(
+            vector,
+            limit=request.neighbors,
+        )
+
+        neighbors = []
+        for row in nearest.itertuples(index=False):
+            candidate = str(row.host_id)
+            neighbors.append(
+                NeighborResponse(
+                    host_id=candidate,
+                    distance=float(row.distance),
+                    similarity_score=float(row.similarity_score),
+                    cluster_id=int(row.cluster_id),
+                    cluster_strength=float(row.cluster_strength),
+                    graph_role=int(self.graph_roles.loc[candidate]),
+                    graph_role_strength=float(
+                        self.graph_role_strengths.loc[candidate]
+                    ),
+                    behavior_subtype=int(self.behavior_subtypes.loc[candidate]),
+                    hierarchical_group=str(self.hierarchical_groups.loc[candidate]),
+                    contributions=self._vector_contributions(vector, candidate),
+                )
+            )
+
+        return PredictionResponse(
+            host_id=request.host_id,
+            cluster_id=cluster_id,
+            cluster_strength=cluster_strength,
+            is_noise=cluster_id == -1,
+            observations=len(request.flows),
+            limitations=[
+                "Графовая роль и локальный поведенческий подтип не вычисляются: "
+                "для них нужен контекст полного stable-графа.",
+                "Поиск выполняется глобально в 454-мерном embedding; входные flows "
+                "должны представлять весь период наблюдения [0, 15).",
+            ],
+            model_version=self.artifact.version,
+            neighbors=neighbors,
+        )
+
     def _behavior_contributions(
         self,
         left: str,
@@ -244,6 +311,28 @@ class SimilarityService:
             )
             for column, value in squared.sort_values(ascending=False).items()
         ]
+
+    def _vector_contributions(
+        self,
+        vector: pd.DataFrame,
+        candidate: str,
+    ) -> list[FeatureContribution]:
+        model = self.artifact.similarity_model
+        query = vector.iloc[0].reindex(model.embedding_.columns)
+        delta = query - model.embedding_.loc[candidate]
+        squared_total = float(np.dot(delta, delta))
+        rows = []
+        for family, columns in model.family_columns_.items():
+            values = delta[columns].to_numpy(dtype=float)
+            squared = float(np.dot(values, values))
+            rows.append(
+                FeatureContribution(
+                    family=family,
+                    distance=float(np.sqrt(squared)),
+                    share=squared / squared_total if squared_total else 0.0,
+                )
+            )
+        return sorted(rows, key=lambda row: row.share, reverse=True)
 
     def _require_host(self, host_id: str) -> str:
         host_id = str(host_id).strip()

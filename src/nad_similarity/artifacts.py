@@ -15,7 +15,6 @@ from nad_similarity.graph import GraphRoleModel, StableTopologyBuilder
 from nad_similarity.hierarchy import HierarchicalSubtypeModel
 from nad_similarity.model import HostSimilarityModel
 
-
 ARTIFACT_VERSION = "v2_v20_hierarchical"
 
 
@@ -47,7 +46,7 @@ class ModelArtifact:
         graph_report: dict[str, Any],
         hierarchy_report: dict[int, dict[str, Any]],
         selection_report: dict[str, int],
-    ) -> "ModelArtifact":
+    ) -> ModelArtifact:
         return cls(
             version=ARTIFACT_VERSION,
             created_at=datetime.now(UTC).isoformat(),

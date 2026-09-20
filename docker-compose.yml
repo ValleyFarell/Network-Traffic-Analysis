@@ -1,0 +1,46 @@
+services:
+  api:
+    build:
+      context: .
+    environment:
+      NAD_ENVIRONMENT: production
+      NAD_MODEL_ARTIFACT_PATH: /app/artifacts/similarity_model.pkl
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  trainer:
+    build:
+      context: .
+    profiles: ["training"]
+    environment:
+      NAD_ENVIRONMENT: production
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    command:
+      - python
+      - -m
+      - nad_similarity.training
+      - --flows
+      - /app/data/raw/flows.txt.gz
+      - --cache
+      - /app/data/processed/training_tables.duckdb
+      - --temp-dir
+      - /app/data/processed/duckdb_tmp
+      - --artifact
+      - /app/artifacts/similarity_model.pkl

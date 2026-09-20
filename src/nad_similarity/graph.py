@@ -7,7 +7,6 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-
 TOPOLOGY_COLUMNS = [
     "directed_pagerank",
     "undirected_pagerank",
@@ -179,7 +178,7 @@ class GraphRoleModel:
         self.labels_: pd.Series | None = None
         self.probabilities_: pd.Series | None = None
 
-    def fit(self, scaled_features: pd.DataFrame) -> "GraphRoleModel":
+    def fit(self, scaled_features: pd.DataFrame) -> GraphRoleModel:
         """Обучает графовые роли на robust-scaled семи координатах."""
 
         # В v19 HDBSCAN получал именно float32-массив. Для этого пространства

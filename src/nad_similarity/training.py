@@ -18,7 +18,6 @@ from nad_similarity.graph import GraphRoleModel, StableTopologyBuilder
 from nad_similarity.hierarchy import HierarchicalSubtypeModel
 from nad_similarity.model import HostSimilarityModel
 
-
 EXPECTED_BEHAVIOR = {
     "hosts": 4_350,
     "dimensions": 454,
@@ -26,7 +25,7 @@ EXPECTED_BEHAVIOR = {
     "noise_hosts": 1_019,
     "cluster_sizes": [1_271, 965, 537, 317, 241],
     "silhouette": 0.243980,
-    "dbcv": 0.042611,
+    "relative_validity": 0.042611,
 }
 
 EXPECTED_GRAPH = {
@@ -36,7 +35,7 @@ EXPECTED_GRAPH = {
     "noise_hosts": 945,
     "cluster_sizes": [1_576, 457, 430, 281, 182, 163, 161, 155],
     "silhouette": 0.370176,
-    "dbcv": 0.447839,
+    "relative_validity": 0.447839,
 }
 
 EXPECTED_HIERARCHY = {
@@ -165,7 +164,7 @@ def train(
 def clustering_report(
     values: pd.DataFrame,
     labels: pd.Series,
-    dbcv: float,
+    relative_validity: float,
 ) -> dict[str, Any]:
     """Считает метрики тем же способом, что evaluate_space в v19."""
 
@@ -199,7 +198,7 @@ def clustering_report(
         "largest_cluster_share": float(sizes.iloc[0] / sizes.sum()),
         "cluster_sizes": [int(value) for value in sizes.tolist()],
         "silhouette": silhouette,
-        "dbcv": float(dbcv),
+        "relative_validity": float(relative_validity),
     }
 
 
@@ -227,10 +226,15 @@ def verify_report(
 
     # relative_validity_ вычисляется на полном MST модели и должен
     # воспроизводить контрольный запуск. Большое расхождение здесь скрывать нельзя.
-    if not np.isclose(actual["dbcv"], expected["dbcv"], atol=0.002, rtol=0):
-        differences["dbcv"] = {
-            "actual": actual["dbcv"],
-            "expected": expected["dbcv"],
+    if not np.isclose(
+        actual["relative_validity"],
+        expected["relative_validity"],
+        atol=0.002,
+        rtol=0,
+    ):
+        differences["relative_validity"] = {
+            "actual": actual["relative_validity"],
+            "expected": expected["relative_validity"],
         }
 
     if differences:
